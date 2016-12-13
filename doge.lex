@@ -2,8 +2,8 @@ SPACES  [\t ]
 LINE    [\n]
 NUMBER  [0-9]
 LETTER  [A-Za-z_]
-INT     {NUMBER}+
-DOUBLE  {NUMBER}+("."{NUMBER}+)?
+INT     [-]?{NUMBER}+
+DOUBLE  [-]?{NUMBER}+("."{NUMBER}+)?
 ID      {LETTER}({LETTER}|{NUMBER})*
 CHAR    "'"{LETTER}"'"
 STRING  "\""([^\n'])*"\""
@@ -27,6 +27,8 @@ STRING  "\""([^\n'])*"\""
 
 "wow"       {yylval = Attributes(yytext); return TK_IF;}
 "scare"     {yylval = Attributes(yytext); return TK_ELSE;}
+"loopy"     {yylval = Attributes(yytext); return TK_FOR;}
+"chase"     {yylval = Attributes(yytext); return TK_WHILE;}
 
 "very"      {yylval = Attributes(yytext); return TK_ATTRIB;}
 "much"      {yylval = Attributes(yytext); return TK_SUM;}

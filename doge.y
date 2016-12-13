@@ -10,6 +10,7 @@ using namespace std;
 
 string lastType;
 int curTempVar = 0;
+int curLabel = 0;
 
 int yylex();
 void error(string);
@@ -29,18 +30,6 @@ struct Attributes {
   }
 };
 
-struct Type {
-  string baseType;
-  int dimension;
-  
-  Type() {}  
-
-  Type(string type) {
-    baseType = type;
-    dimension = 0;
-  }
-};
-
 void newScope();
 void exitScope();
 void insertSymbolTable(string, string);
@@ -53,6 +42,7 @@ string newTempVar(string);
 string dogeToC(string);
 string checkResultType(string, string, string);
 string generateOperatorCode(string, string, string, string, string);
+string newLabel();
 
 string includes = 
 "#include <iostream>\n"
@@ -69,7 +59,7 @@ string includes =
 %token TK_MAIN TK_ATTRIB TK_OUT TK_IN
 %token TK_INT TK_CHAR TK_BOOL TK_DOUBLE TK_STRING TK_ID
 %token TK_INTVAL TK_DOUBLEVAL TK_STRINGVAL TK_CHARVAL TK_BOOLVAL
-%token TK_IF TK_ELSE
+%token TK_IF TK_ELSE TK_FOR TK_WHILE
 
 %left TK_AND TK_OR
 %nonassoc TK_NEG TK_GT TK_ST TK_DIF TK_EQUAL TK_GET TK_SET
@@ -78,9 +68,10 @@ string includes =
 
 %%
 
-S: MAIN
+S: {newScope();} VARS MAIN {exitScope();}
    {cout << includes << endl;
-    cout << $1.code << endl;}
+    cout << $2.code << endl;
+    cout << $3.code << endl;}
  ;
 
 MAIN: TK_MAIN '{' {newScope();} VARS PROG {exitScope();} '}'
@@ -123,6 +114,8 @@ IDS: TK_ID ',' IDS
 
 PROG: OPERATION ';' PROG
       {$$.code = $1.code + $3.code;}
+    | CONTROL PROG
+      {$$.code = $1.code + $2.code;}
     |
       {$$.code = "";}
     ;
@@ -131,7 +124,8 @@ OPERATION: TK_ID TK_ATTRIB E
            {$$.code = $3.code;
             $$.code += attributeToVar($1.name, $3.name, $3.type) + ";\n";}
          | TK_OUT '(' E ')'
-           {$$.code = "cout << " + $3.name + ";\n";
+           {$$.code += $3.code;
+            $$.code += "cout << " + $3.name + ";\n";
             $$.code += "cout << \"\\n\";\n";}
          | TK_IN '(' E ')'
            {$$.code = "cin >> " + $3.name + ";\n";}
@@ -154,62 +148,62 @@ E: VALUE
    {$$.type = checkResultType($1.type, $3.type, "-");
     $$.name = newTempVar(dogeToC($$.type));
     $$.code = $1.code + $3.code;
-    $$.code += $$.name + " = " + $1.name + " - " + $3.name + ";\n";}
+    $$.code += generateOperatorCode($1.name, $3.name, $$.name, "-", $$.type);}
  | E TK_MUL E
    {$$.type = checkResultType($1.type, $3.type, "*");
     $$.name = newTempVar(dogeToC($$.type));
     $$.code = $1.code + $3.code;
-    $$.code += $$.name + " = " + $1.name + " * " + $3.name + ";\n";}
+    $$.code += generateOperatorCode($1.name, $3.name, $$.name, "*", $$.type);}
  | E TK_DIV E
    {$$.type = checkResultType($1.type, $3.type, "/");
     $$.name = newTempVar(dogeToC($$.type));
     $$.code = $1.code + $3.code;
-    $$.code += $$.name + " = " + $1.name + " / " + $3.name + ";\n";}
+    $$.code += generateOperatorCode($1.name, $3.name, $$.name, "/", $$.type);}
  | E TK_AND E
    {$$.type = "woof";
     $$.name = newTempVar(dogeToC($$.type));
     $$.code = $1.code + $3.code;
-    $$.code = $$.name + " = " + $1.name + " && " + $3.name + ";\n";}
+    $$.code += generateOperatorCode($1.name, $3.name, $$.name, "&&", $$.type);}
  | E TK_OR E
    {$$.type = "woof";
     $$.name = newTempVar(dogeToC($$.type));
     $$.code = $1.code + $3.code;
-    $$.code = $$.name + " = " + $1.name + " || " + $3.name + ";\n";}
+    $$.code += generateOperatorCode($1.name, $3.name, $$.name, "||", $$.type);}
+ | E TK_GT E
+   {$$.type = "woof";
+    $$.name = newTempVar(dogeToC($$.type));
+    $$.code = $1.code + $3.code;
+    $$.code += generateOperatorCode($1.name, $3.name, $$.name, ">", $$.type);}
+ | E TK_ST E
+   {$$.type = "woof";
+    $$.name = newTempVar(dogeToC($$.type));
+    $$.code = $1.code + $3.code;
+    $$.code += generateOperatorCode($1.name, $3.name, $$.name, "<", $$.type);}
+ | E TK_DIF E
+   {$$.type = "woof";
+    $$.name = newTempVar(dogeToC($$.type));
+    $$.code = $1.code + $3.code;
+    $$.code += generateOperatorCode($1.name, $3.name, $$.name, "!=", $$.type);}
+ | E TK_EQUAL E
+   {$$.type = "woof";
+    $$.name = newTempVar(dogeToC($$.type));
+    $$.code = $1.code + $3.code;
+    $$.code += generateOperatorCode($1.name, $3.name, $$.name, "==", $$.type);}
+ | E TK_GET E
+   {$$.type = "woof";
+    $$.name = newTempVar(dogeToC($$.type));
+    $$.code = $1.code + $3.code;
+    $$.code += generateOperatorCode($1.name, $3.name, $$.name, ">=", $$.type);}
+ | E TK_SET E
+   {$$.type = "woof";
+    $$.name = newTempVar(dogeToC($$.type));
+    $$.code = $1.code + $3.code;
+    $$.code += generateOperatorCode($1.name, $3.name, $$.name, "<=", $$.type);}
  | TK_NEG E
    {$$.type = "woof";
     $$.name = newTempVar(dogeToC($$.type));
     $$.code = $2.code;
     $$.code = $$.name + " = !" + $2.name + ";\n";}
- | E TK_GT E
-   {$$.type = "woof";
-    $$.name = newTempVar(dogeToC($$.type));
-    $$.code = $1.code + $3.code;
-    $$.code = $$.name + " = " + $1.name + " > " + $3.name + ";\n";}
- | E TK_ST E
-   {$$.type = "woof";
-    $$.name = newTempVar(dogeToC($$.type));
-    $$.code = $1.code + $3.code;
-    $$.code = $$.name + " = " + $1.name + " < " + $3.name + ";\n";}
- | E TK_DIF E
-   {$$.type = "woof";
-    $$.name = newTempVar(dogeToC($$.type));
-    $$.code = $1.code + $3.code;
-    $$.code = $$.name + " = " + $1.name + " != " + $3.name + ";\n";}
- | E TK_EQUAL E
-   {$$.type = "woof";
-    $$.name = newTempVar(dogeToC($$.type));
-    $$.code = $1.code + $3.code;
-    $$.code = $$.name + " = " + $1.name + " == " + $3.name + ";\n";}
- | E TK_GET E
-   {$$.type = "woof";
-    $$.name = newTempVar(dogeToC($$.type));
-    $$.code = $1.code + $3.code;
-    $$.code = $$.name + " = " + $1.name + " >= " + $3.name + ";\n";}
- | E TK_SET E
-   {$$.type = "woof";
-    $$.name = newTempVar(dogeToC($$.type));
-    $$.code = $1.code + $3.code;
-    $$.code = $$.name + " = " + $1.name + " <= " + $3.name + ";\n";}
  | '(' E ')'
    {$$.type = $2.type;
     $$.name = $2.name;
@@ -233,6 +227,53 @@ VALUE: TK_INTVAL
         $$.type = "woof";}
      ;
 
+CONTROL : TK_IF '(' E ')' '{' PROG '}' ELSE
+          {$$.name = newLabel();
+           $$.code = $3.code;
+           $$.code += "if(" + $3.name + ") goto " + $$.name + ";\n";
+           $$.code += $8.code;
+           $$.code += "goto " + $$.name + "_END;\n";
+           $$.code += $$.name + ":;\n";
+           $$.code += $6.code;
+           $$.code += $$.name + "_END:;\n";}
+        | TK_FOR '(' OPERATION ';' E ';' OPERATION ')' '{' PROG '}'
+          {$$.name = newLabel();
+           $$.code = $3.code;
+           $$.code += $5.code;
+           $$.code += "if (" + $5.name + ") goto " + $$.name + "_BEGIN;\n";
+           $$.code += "goto " + $$.name + "_END;\n";
+           $$.code += $$.name + "_BEGIN:;\n";
+           $$.code += $10.code;
+           $$.code += $7.code;
+           $$.code += $5.code;
+           $$.code += "if (" + $5.name + ") goto " + $$.name + "_BEGIN;\n";
+           $$.code += $$.name + "_END:;\n";}
+        | TK_WHILE '(' E ')' '{' PROG '}'
+          {$$.name = newLabel();
+           $$.code = $3.code;
+           $$.code += "if (" + $3.name + ") goto " + $$.name + "_BEGIN;\n";
+           $$.code += "goto " + $$.name + "_END;\n";
+           $$.code += $$.name + "_BEGIN:;\n";
+           $$.code += $6.code;
+           $$.code += $3.code;
+           $$.code += "if (" + $3.name + ") goto " + $$.name + "_BEGIN;\n";
+           $$.code += $$.name + "_END:;\n";}
+
+ELSE: TK_ELSE '{' PROG '}'
+      {$$.code = $3.code;}
+    | TK_ELSE TK_IF '(' E ')' '{' PROG '}' ELSE
+      {$$.name = newLabel();
+       $$.code = $4.code;
+       $$.code += "if(" + $4.name + ") goto " + $$.name + ";\n";
+       $$.code += $9.code;
+       $$.code += "goto " + $$.name + "_END;\n";
+       $$.code += $$.name + ":;\n";
+       $$.code += $7.code;
+       $$.code += $$.name + "_END:;\n";}
+    |
+      {$$.code = "";}
+    ;
+
 %%
 
 int lineNumber = 1;
@@ -255,8 +296,8 @@ void exitScope() {
 void insertSymbolTable(string name, string type) {
   int currentScope = symbolTable.size()-1;
 
-  if (symbolTable[currentScope].find(name) != symbolTable[currentScope].end()) {
-    error("Variable " + name + " (" + type + ") has already been declared.");
+  if (symbolTable[0].find(name) != symbolTable[0].end() || symbolTable[currentScope].find(name) != symbolTable[currentScope].end()) {
+    error("Variable " + name + " has already been declared.");
   }
 
   symbolTable[currentScope][name] = type;
@@ -264,13 +305,32 @@ void insertSymbolTable(string name, string type) {
 
 void verifyType(string variable, string type) {
   int currentScope = symbolTable.size()-1;
+  string variableType = getVarType(variable);
 
-  if (symbolTable[currentScope].find(variable) == symbolTable[currentScope].end()) {
-    error("Variable " + variable + " (" + type + ") has not been declared in this scope.");
+  if (variableType == "numbuh") {
+    if (type != "numbuh" && type != "letter" && type != "woof") {
+      error("Variable " + variable + " has type " + symbolTable[currentScope][variable] + ". Unable to attribute a " + type + " to it.");
+    }
   }
-
-  if (symbolTable[currentScope][variable] != type) {
-    error("Variable " + variable + " has type " + symbolTable[currentScope][variable] + ". Unable to attribute a " + type + " to it.");
+  else if (variableType == "floaty") {
+    if (type != "numbuh" && type != "floaty" && type != "woof") {
+      error("Variable " + variable + " has type " + symbolTable[currentScope][variable] + ". Unable to attribute a " + type + " to it.");
+    }
+  }
+  else if (variableType == "letter") {
+    if (type != "numbuh" && type != "woof" && type != "letter") {
+      error("Variable " + variable + " has type " + symbolTable[currentScope][variable] + ". Unable to attribute a " + type + " to it.");
+    }
+  }
+  else if (variableType == "wordies") {
+    if (type != "wordies") {
+      error("Variable " + variable + " has type " + symbolTable[currentScope][variable] + ". Unable to attribute a " + type + " to it.");
+    }
+  }
+  else if (variableType == "woof") {
+    if (type != "numbuh" && type != "letter" && type != "floaty" && type != "woof") {
+      error("Variable " + variable + " has type " + symbolTable[currentScope][variable] + ". Unable to attribute a " + type + " to it.");
+    }
   }
 }
 
@@ -279,8 +339,7 @@ string attributeToVar(string variable, string value, string type) {
   verifyType(variable, type);
 
   if (type == "wordies") {
-    code += "strncpy(" + variable + ", " + value + ", 256);\n";
-    code += variable + "[255] = \'\\0\'";
+    code += "strncpy(" + variable + ", " + value + ", 256)";
     return code;
   }
   return (variable + " = " + value);
@@ -301,11 +360,15 @@ string declareVariable(string name, string type) {
 string getVarType(string name) {
   int currentScope = symbolTable.size()-1;
 
-  if (symbolTable[currentScope].find(name) == symbolTable[currentScope].end()) {
+  if (symbolTable[0].find(name) != symbolTable[0].end()) {
+    return symbolTable[0][name];
+  }
+  else if (symbolTable[currentScope].find(name) != symbolTable[currentScope].end()) {
+    return symbolTable[currentScope][name];
+  }
+  else {
     error("Variable " + name + " has not been declared in this scope.");
   }
-
-  return symbolTable[currentScope][name];
 }
 
 string newTempVar(string type) {
@@ -317,6 +380,12 @@ string newTempVar(string type) {
   else {
     tempVector.push_back("char " + temp + "[256]");
   }
+
+  return (temp);
+}
+
+string newLabel() {
+  string temp = "LABEL_" + to_string(++curLabel);
 
   return (temp);
 }
@@ -338,6 +407,8 @@ string checkResultType(string type1, string type2, string op) {
   }
   if (op == "+") {
     if (type1 == "wordies" && type2 == "wordies") return "wordies";
+    if (type1 == "numbuh" && type2 == "wordies") return "wordies";
+    if (type1 == "wordies" && type2 == "numbuh") return "wordies";
   }
 }
 
@@ -345,7 +416,7 @@ string generateOperatorCode(string var1, string var2, string destination, string
   string code = "";
 
   if (type != "wordies") {
-    code += destination + " = " + var1 + " " + op + " " + var2;
+    code += destination + " = " + var1 + " " + op + " " + var2 + ";\n";
   } 
   else {
     code += "strcpy(" + destination + ", " + var1 + ");\n";
