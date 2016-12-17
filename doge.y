@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <vector>
 #include <map>
+#include <algorithm>
 
 using namespace std;
 
@@ -17,11 +18,15 @@ void error(string);
 void yyerror(const char* st);
 
 vector<string> tempVector;
+string tempVar;
 
 struct Attributes {
   string code;
   string name;
   string type;
+
+  int size;
+  int dimension;
 
   Attributes() {}
 
@@ -30,21 +35,51 @@ struct Attributes {
   }
 };
 
+struct Type {
+  string baseType;
+  int dimension;
+  int size[2];
+
+  Type() {}
+
+  Type(string type) {
+    baseType = type;
+    dimension = 0;
+  }
+
+  Type(string type, int size1) {
+    baseType = type;
+    dimension = 1;
+    size[0] = size1;
+  }
+
+  Type(string type, int size1, int size2) {
+    baseType = type;
+    dimension = 2;
+    size[0] = size1;
+    size[1] = size2;
+  }
+};
+
 void newScope();
 void exitScope();
 void insertSymbolTable(string, string);
-void verifyType(string, string);
+void verifyType(string, string, string);
+void verifyDimension(string, int);
 
-string attributeToVar(string, string, string);
-string declareVariable(string, string);
-string getVarType(string);
+string attributeToVar(string, string, string, string);
+string declareVariable(string, string, int, int, int);
 string newTempVar(string);
 string dogeToC(string);
 string checkResultType(string, string, string);
 string generateOperatorCode(string, string, string, string, string);
 string newLabel();
 
-string includes = 
+Type getVarType(string);
+
+Type temp;
+
+string includeHead = 
 "#include <iostream>\n"
 "#include <stdio.h>\n"
 "#include <stdlib.h>\n"
@@ -59,7 +94,7 @@ string includes =
 %token TK_MAIN TK_ATTRIB TK_OUT TK_IN
 %token TK_INT TK_CHAR TK_BOOL TK_DOUBLE TK_STRING TK_ID
 %token TK_INTVAL TK_DOUBLEVAL TK_STRINGVAL TK_CHARVAL TK_BOOLVAL
-%token TK_IF TK_ELSE TK_FOR TK_WHILE
+%token TK_IF TK_ELSE TK_FOR TK_WHILE TK_DO TK_CASE TK_SWITCH TK_DEFAULT
 
 %left TK_AND TK_OR
 %nonassoc TK_NEG TK_GT TK_ST TK_DIF TK_EQUAL TK_GET TK_SET
@@ -69,7 +104,7 @@ string includes =
 %%
 
 S: {newScope();} VARS MAIN {exitScope();}
-   {cout << includes << endl;
+   {cout << includeHead << endl;
     cout << $2.code << endl;
     cout << $3.code << endl;}
  ;
@@ -107,10 +142,35 @@ VAR_TYPE: TK_INT
         ;
 
 IDS: TK_ID ',' IDS
-     {$$.code = declareVariable($1.name, lastType) + ", " + $3.code;}
+     {$$.code = declareVariable($1.name, lastType, 0, 0, 0) + ", " + $3.code;}
+   | TK_ID '[' TK_INTVAL ']' ',' IDS
+     {$$.code = declareVariable($1.name, lastType, 1, stoi($3.name), 0) + ", " + $6.code;}
+   | TK_ID '[' TK_INTVAL ']' '[' TK_INTVAL ']' ',' IDS
+     {$$.code = declareVariable($1.name, lastType, 2, stoi($3.name), stoi($6.name)) + ", " + $9.code;}
    | TK_ID ';'
-     {$$.code = declareVariable($1.name, lastType) + ";\n";}
+     {$$.code = declareVariable($1.name, lastType, 0, 0, 0) + ";\n";}
+   | TK_ID '[' TK_INTVAL ']' ';'
+     {$$.code = declareVariable($1.name, lastType, 1, stoi($3.name), 0) + ";\n";}
+   | TK_ID '[' TK_INTVAL ']' '[' TK_INTVAL ']' ';'
+     {$$.code = declareVariable($1.name, lastType, 2, stoi($3.name), stoi($6.name)) + ";\n";}
    ;
+
+ID_TOKEN: TK_ID
+          {$$.name = $1.name;
+           $$.type = getVarType("_" + $1.name).baseType;
+           $$.code = "";}
+        | TK_ID '[' E ']'
+          {$$.code = $3.code;
+           $$.type = getVarType("_" + $1.name).baseType;
+           $$.name = $1.name + "[" + $3.name + "]";}
+        | TK_ID '[' E ']' '[' E ']'
+          {$$.code = $3.code + $6.code;
+           $$.type = getVarType("_" + $1.name).baseType;
+           tempVar = newTempVar(dogeToC($3.type));
+           $$.code += tempVar + " = " + $3.name + " * " + to_string(getVarType("_" + $1.name).size[1]) + ";\n";
+           $$.code += tempVar + " = " + tempVar + " + " + $6.name + ";\n";
+           $$.name = $1.name + "[" + tempVar + "]";}
+        ;
 
 PROG: OPERATION ';' PROG
       {$$.code = $1.code + $3.code;}
@@ -120,15 +180,28 @@ PROG: OPERATION ';' PROG
       {$$.code = "";}
     ;
 
-OPERATION: TK_ID TK_ATTRIB E
-           {$$.code = $3.code;
-            $$.code += attributeToVar($1.name, $3.name, $3.type) + ";\n";}
+OPERATION: ID_TOKEN TK_ATTRIB E
+           {$$.code = $1.code + $3.code;
+            $$.code += attributeToVar($1.name, $1.type, $3.name, $3.type) + ";\n";}
          | TK_OUT '(' E ')'
            {$$.code += $3.code;
-            $$.code += "cout << " + $3.name + ";\n";
+            $$.name = newTempVar(dogeToC($3.type));
+            if ($3.type == "wordies") {
+              $$.code += "strncpy(" + $$.name + ", " + $3.name + ", 256);\n";
+            }
+            else {
+              $$.code += $$.name + " = " + $3.name + ";\n";
+            }
+            $$.code += "cout << " + $$.name + ";\n";
             $$.code += "cout << \"\\n\";\n";}
          | TK_IN '(' E ')'
-           {$$.code = "cin >> " + $3.name + ";\n";}
+           {if ($3.type != "wordies") {
+              $$.code = "cin >> " + $3.name + ";\n";
+            }
+            else {
+              $$.code = "fgets(" + $3.name + ", 256, stdin);\n";
+            }
+           }
          |
            {$$.code = "";}
          ;
@@ -136,9 +209,10 @@ OPERATION: TK_ID TK_ATTRIB E
 E: VALUE
    {$$.name = $1.name;
     $$.type = $1.type;}
- | TK_ID
-   {$$.name = $1.name;
-    $$.type = getVarType($1.name);}
+ | ID_TOKEN
+   {$$.code = $1.code;
+    $$.name = "_" + $1.name;
+    $$.type = $1.type;}
  | E TK_SUM E
    {$$.type = checkResultType($1.type, $3.type, "+");
     $$.name = newTempVar(dogeToC($$.type));
@@ -258,6 +332,28 @@ CONTROL : TK_IF '(' E ')' '{' PROG '}' ELSE
            $$.code += $3.code;
            $$.code += "if (" + $3.name + ") goto " + $$.name + "_BEGIN;\n";
            $$.code += $$.name + "_END:;\n";}
+        | TK_DO '{' PROG '}' TK_WHILE '(' E ')'
+          {$$.name = newLabel();
+           $$.code = $$.name + "_BEGIN:;\n";
+           $$.code += $3.code;
+           $$.code += $7.code;
+           $$.code += "if (" + $7.name + ") goto " + $$.name + "_BEGIN;\n";}
+        | TK_SWITCH '(' E ')' '{' CASES '}'
+          {$$.name = newLabel();
+           $$.code = $3.code;
+           $$.code += $6.code;
+           $$.code += $$.name;}
+        ;
+
+CASES: TK_CASE VALUE ':' PROG CASES
+       {$$.code = "";}
+     | TK_DEFAULT ':' PROG
+       {$$.name = newLabel();
+        $$.code = $$.name + "_DEFAULT:";}
+     |
+       {$$.name = newLabel();
+        $$.code = $$.name + "_DEFAULT:";}
+     ;
 
 ELSE: TK_ELSE '{' PROG '}'
       {$$.code = $3.code;}
@@ -282,10 +378,10 @@ int lineNumber = 1;
 
 int yyparse();
 
-vector<map<string, string>> symbolTable;
+vector<map<string, Type>> symbolTable;
 
 void newScope() {
-  map<string, string> newTable;
+  map<string, Type> newTable;
   symbolTable.push_back(newTable);
 }
 
@@ -293,7 +389,7 @@ void exitScope() {
   symbolTable.pop_back();
 }
 
-void insertSymbolTable(string name, string type) {
+void insertSymbolTable(string name, Type type) {
   int currentScope = symbolTable.size()-1;
 
   if (symbolTable[0].find(name) != symbolTable[0].end() || symbolTable[currentScope].find(name) != symbolTable[currentScope].end()) {
@@ -303,40 +399,46 @@ void insertSymbolTable(string name, string type) {
   symbolTable[currentScope][name] = type;
 }
 
-void verifyType(string variable, string type) {
-  int currentScope = symbolTable.size()-1;
-  string variableType = getVarType(variable);
-
+void verifyType(string variable, string variableType, string type) {
   if (variableType == "numbuh") {
     if (type != "numbuh" && type != "letter" && type != "woof") {
-      error("Variable " + variable + " has type " + symbolTable[currentScope][variable] + ". Unable to attribute a " + type + " to it.");
+      error("Variable " + variable + " has type " + variableType + ". Unable to attribute a " + type + " to it.");
     }
   }
   else if (variableType == "floaty") {
     if (type != "numbuh" && type != "floaty" && type != "woof") {
-      error("Variable " + variable + " has type " + symbolTable[currentScope][variable] + ". Unable to attribute a " + type + " to it.");
+      error("Variable " + variable + " has type " + variableType + ". Unable to attribute a " + type + " to it.");
     }
   }
   else if (variableType == "letter") {
     if (type != "numbuh" && type != "woof" && type != "letter") {
-      error("Variable " + variable + " has type " + symbolTable[currentScope][variable] + ". Unable to attribute a " + type + " to it.");
+      error("Variable " + variable + " has type " + variableType + ". Unable to attribute a " + type + " to it.");
     }
   }
   else if (variableType == "wordies") {
     if (type != "wordies") {
-      error("Variable " + variable + " has type " + symbolTable[currentScope][variable] + ". Unable to attribute a " + type + " to it.");
+      error("Variable " + variable + " has type " + variableType + ". Unable to attribute a " + type + " to it.");
     }
   }
   else if (variableType == "woof") {
     if (type != "numbuh" && type != "letter" && type != "floaty" && type != "woof") {
-      error("Variable " + variable + " has type " + symbolTable[currentScope][variable] + ". Unable to attribute a " + type + " to it.");
+      error("Variable " + variable + " has type " + variableType + ". Unable to attribute a " + type + " to it.");
     }
   }
 }
 
-string attributeToVar(string variable, string value, string type) {
+void verifyDimension(string variable, int dimension) {
+  Type varType = getVarType(variable);
+
+  if (varType.dimension != dimension) {
+    error("Variable " + variable + " has dimension " + to_string(varType.dimension) + " not " + to_string(dimension) + ".");
+  }
+}
+
+string attributeToVar(string variable, string variableType, string value, string type) {
   string code = "";
-  verifyType(variable, type);
+  variable = "_" + variable;
+  verifyType(variable, variableType, type);
 
   if (type == "wordies") {
     code += "strncpy(" + variable + ", " + value + ", 256)";
@@ -345,19 +447,42 @@ string attributeToVar(string variable, string value, string type) {
   return (variable + " = " + value);
 }
 
-string declareVariable(string name, string type) {
-  string size = "";
+string declareVariable(string name, string type, int dimension, int size1, int size2) {
+  int size;
+  name = "_" + name;
 
-  if (type == "wordies") {
-    size = "[256]";
+  if (dimension == 0) {
+    Type newType(type);
+    if (type == "wordies") {
+      size = 256;
+      insertSymbolTable(name, newType);
+      return (name + "[" + to_string(size) + "]");
+    }
+    insertSymbolTable(name, newType);
+  }
+  else if (dimension == 1) {
+    Type newType(type, size1);
+    size = size1;
+    if (type == "wordies") {
+      size *= 256;
+    }
+    insertSymbolTable(name, newType);
+    return (name + "[" + to_string(size) + "]");
+  }
+  else if (dimension == 2) {
+    Type newType(type, size1, size2);
+    size = size1 * size2;
+    if (type == "wordies") {
+      size *= 256;
+    }
+    insertSymbolTable(name, newType);
+    return (name + "[" + to_string(size) + "]");
   }
 
-  insertSymbolTable(name, type);
-
-  return (name + size);
+  return (name);
 }
 
-string getVarType(string name) {
+Type getVarType(string name) {
   int currentScope = symbolTable.size()-1;
 
   if (symbolTable[0].find(name) != symbolTable[0].end()) {
