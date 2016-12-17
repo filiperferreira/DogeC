@@ -20,6 +20,7 @@ vector<string> tempVector;
 vector<string> temPVector;
 string tempVar;
 string tempSwitchVar;
+string tempCode;
 
 struct Attributes {
   string code;
@@ -87,6 +88,7 @@ void insertFunctionTable(string, Func);
 void verifyType(string, string, string);
 void verifyDimension(string, int);
 void declareFunction(string, string, vector<string>);
+void checkFunction(string, string, vector<string>);
 
 string attributeToVar(string, string, string, string);
 string declareVariable(string, string, int, int, int);
@@ -97,6 +99,7 @@ string generateOperatorCode(string, string, string, string, string);
 string newLabel();
 
 Type getVarType(string);
+Func getFuncType(string);
 
 Type temp;
 
@@ -126,9 +129,10 @@ string includeHead =
 
 %%
 
-S: PROT_FUNCS {newScope();} VARS MAIN {exitScope();}
+S: PROT_FUNCS {newScope();} VARS MAIN {exitScope();} FUNCS
    {cout << includeHead << endl;
-    cout << $1.code;
+    cout << $1.code << endl;
+    cout << $6.code;
     cout << $3.code << endl;
     cout << $4.code << endl;}
  ;
@@ -147,6 +151,8 @@ PARAMS: FUNC_VAR_TYPE ',' PARAMS
         {temPVector.clear();
          temPVector.push_back($1.name);
          $$.code = $1.code;}
+      |
+        {$$.code = "";}
       ;
 
 FUNC_VAR_TYPE: TK_INT
@@ -172,7 +178,7 @@ MAIN: TK_MAIN '{' {newScope();} VARS PROG {exitScope();} '}'
          $$.code += tempVector[tempVector.size()-1] + ";\n";
          tempVector.pop_back();
        }
-       $$.code += $4.code + $5.code + "return 0;\n}";}
+       $$.code += $4.code + $5.code + "return 0;\n}\n";}
     ;
 
 VARS: VAR_TYPE IDS VARS
@@ -233,6 +239,27 @@ PROG: OPERATION ';' PROG
       {$$.code = $1.code + $3.code;}
     | CONTROL PROG
       {$$.code = $1.code + $2.code;}
+    | FUNC_CALL ';' PROG
+      {$$.code = $1.code + $3.code;}
+    |
+      {$$.code = "";}
+    ;
+
+FUNC_CALL: TK_ID '(' PARS ')'
+           {checkFunction($1.name, getFuncType($1.name).type, temPVector);
+            $$.code = tempCode;
+            $$.code += $1.name + "(" + $3.code + ");\n";}
+         ;
+
+PARS: E ',' PARS
+      {tempCode += $1.code;
+       $$.code = $1.name + ", " + $3.code;
+       temPVector.push_back($1.type);}
+    | E
+      {temPVector.clear();
+       tempCode = $1.code;
+       $$.code = $1.name;
+       temPVector.push_back($1.type);}
     |
       {$$.code = "";}
     ;
@@ -435,6 +462,32 @@ ELSE: TK_ELSE '{' PROG '}'
       {$$.code = "";}
     ;
 
+FUNCS: {newScope();} VAR_TYPE TK_ID '(' PAR ')' '{' VARS PROG '}' {exitScope();} FUNCS
+       {$$.code = $2.code + $3.name + "(" + $5.code + ") {\n";
+        $$.code += $8.code;
+        while(tempVector.size() != 0) {
+          $$.code += tempVector[tempVector.size()-1] + ";\n";
+          tempVector.pop_back();
+        }
+        $$.code += $9.code;
+        $$.code += "}\n";}
+     |
+       {$$.code = "";}
+     ;
+
+PAR: VAR_TYPE TK_ID ',' PAR
+     {$$.code = $1.code + $2.name + ", " + $4.code;
+      temPVector.push_back($1.name);
+      declareVariable($2.name, $1.name, 0, 0, 0);}
+   | VAR_TYPE TK_ID
+     {temPVector.clear();
+      temPVector.push_back($1.name);
+      $$.code = $1.code + "_" + $2.name;
+      declareVariable($2.name, $1.name, 0, 0, 0);}
+   |
+     {$$.code = "";}
+   ;
+
 %%
 
 int lineNumber = 1;
@@ -554,6 +607,31 @@ void declareFunction(string name, string type, vector<string> params) {
   insertFunctionTable(name, temp);
 }
 
+void checkFunction(string name, string type, vector<string> params) {
+  Func temp;
+
+  if (functionTable.find(name) != functionTable.end()) {
+    temp = functionTable[name];
+  }
+  else {
+    error("Function " + name + " does not exist.");
+  }
+
+  if (temp.type != type) {
+    error("Function " + name + " has type " + temp.type + " not " + type + ".");
+  }
+
+  if (temp.parameters != params.size()) {
+    error("Function " + name + " has " + to_string(temp.parameters) + " parameters not " + to_string(params.size()) + ".");
+  }
+
+  for (int i = 0; i < params.size(); i++) {
+    if(temp.types[i] != params[i]) {
+      error("Invalid type on variable number " + to_string(i+1) + " of function " + name + ".\nExpected " + temp.types[i] + " but received a " + params[i] + ".");
+    }
+  }
+}
+
 void insertFunctionTable(string name, Func type) {
   if (functionTable.find(name) != functionTable.end()) {
     error("Function " + name + " has already been declared.");
@@ -573,6 +651,17 @@ Type getVarType(string name) {
   }
   else {
     error("Variable " + name + " has not been declared in this scope.");
+  }
+}
+
+Func getFuncType(string name) {
+  int currentScope = functionTable.size()-1;
+
+  if (functionTable.find(name) != functionTable.end()) {
+    return functionTable[name];
+  }
+  else {
+    error("Function " + name + " has not been declared.");
   }
 }
 
