@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <vector>
 #include <map>
-#include <algorithm>
 
 using namespace std;
 
@@ -18,7 +17,9 @@ void error(string);
 void yyerror(const char* st);
 
 vector<string> tempVector;
+vector<string> temPVector;
 string tempVar;
+string tempSwitchVar;
 
 struct Attributes {
   string code;
@@ -61,11 +62,31 @@ struct Type {
   }
 };
 
+struct Func {
+  string name;
+  string type;
+  int parameters;
+  vector<string> types;
+
+  Func() {}
+
+  Func(string n, string t, int q, vector<string> list) {
+    name = n;
+    type = t;
+    parameters = q;
+    for (int i = 0; i < q; i++) {
+      types.push_back(list[i]);
+    }
+  }
+};
+
 void newScope();
 void exitScope();
-void insertSymbolTable(string, string);
+void insertSymbolTable(string, Type);
+void insertFunctionTable(string, Func);
 void verifyType(string, string, string);
 void verifyDimension(string, int);
+void declareFunction(string, string, vector<string>);
 
 string attributeToVar(string, string, string, string);
 string declareVariable(string, string, int, int, int);
@@ -91,23 +112,59 @@ string includeHead =
 
 %}
 
-%token TK_MAIN TK_ATTRIB TK_OUT TK_IN
+%token TK_MAIN TK_ATTRIB TK_OUT TK_IN TK_RETURN
 %token TK_INT TK_CHAR TK_BOOL TK_DOUBLE TK_STRING TK_ID
 %token TK_INTVAL TK_DOUBLEVAL TK_STRINGVAL TK_CHARVAL TK_BOOLVAL
 %token TK_IF TK_ELSE TK_FOR TK_WHILE TK_DO TK_CASE TK_SWITCH TK_DEFAULT
 
-%left TK_AND TK_OR
-%nonassoc TK_NEG TK_GT TK_ST TK_DIF TK_EQUAL TK_GET TK_SET
+%left TK_OR
+%left TK_AND
+%nonassoc TK_GT TK_ST TK_DIF TK_EQUAL TK_GET TK_SET
 %left TK_SUM TK_SUB
 %left TK_MUL TK_DIV
+%nonassoc TK_NEG
 
 %%
 
-S: {newScope();} VARS MAIN {exitScope();}
+S: PROT_FUNCS {newScope();} VARS MAIN {exitScope();}
    {cout << includeHead << endl;
-    cout << $2.code << endl;
-    cout << $3.code << endl;}
+    cout << $1.code;
+    cout << $3.code << endl;
+    cout << $4.code << endl;}
  ;
+
+PROT_FUNCS: VAR_TYPE TK_ID '(' PARAMS ')' ';' PROT_FUNCS
+            {declareFunction($2.name, $1.name, temPVector);
+             $$.code = $1.code + $2.name + "(" + $4.code + ");\n" + $7.code;}
+          |
+            {$$.code = "";}
+          ;
+
+PARAMS: FUNC_VAR_TYPE ',' PARAMS
+        {$$.code = $1.code + ", " + $3.code;
+         temPVector.push_back($1.name);}
+      | FUNC_VAR_TYPE
+        {temPVector.clear();
+         temPVector.push_back($1.name);
+         $$.code = $1.code;}
+      ;
+
+FUNC_VAR_TYPE: TK_INT
+               {$$.code = "int";
+                $$.name = $1.name;}
+             | TK_CHAR
+               {$$.code = "char";
+                $$.name = $1.name;}
+             | TK_BOOL
+               {$$.code = "int";
+                $$.name = $1.name;}
+             | TK_DOUBLE
+               {$$.code = "double";
+                $$.name = $1.name;}
+             | TK_STRING
+               {$$.code = "char[]";
+                $$.name = $1.name;}
+             ;
 
 MAIN: TK_MAIN '{' {newScope();} VARS PROG {exitScope();} '}'
       {$$.code = "int main() {\n";
@@ -195,11 +252,11 @@ OPERATION: ID_TOKEN TK_ATTRIB E
             $$.code += "cout << " + $$.name + ";\n";
             $$.code += "cout << \"\\n\";\n";}
          | TK_IN '(' E ')'
-           {if ($3.type != "wordies") {
-              $$.code = "cin >> " + $3.name + ";\n";
+           {if ($3.type == "wordies") {
+              $$.code = "fgets(" + $3.name + ", 256, stdin);\n";
             }
             else {
-              $$.code = "fgets(" + $3.name + ", 256, stdin);\n";
+              $$.code = "cin >> " + $3.name + ";\n";
             }
            }
          |
@@ -339,20 +396,28 @@ CONTROL : TK_IF '(' E ')' '{' PROG '}' ELSE
            $$.code += $7.code;
            $$.code += "if (" + $7.name + ") goto " + $$.name + "_BEGIN;\n";}
         | TK_SWITCH '(' E ')' '{' CASES '}'
-          {$$.name = newLabel();
-           $$.code = $3.code;
-           $$.code += $6.code;
-           $$.code += $$.name;}
+          {$$.code = $3.code;
+           $$.code += tempSwitchVar + " = " + $3.name + ";\n";
+           $$.code += $6.code;}
         ;
 
 CASES: TK_CASE VALUE ':' PROG CASES
-       {$$.code = "";}
+       {$$.name = newTempVar(dogeToC("woof"));
+        $3.name = newLabel();
+        $$.code = $$.name + " = " + tempSwitchVar + " != " + $2.name + ";\n";
+        $$.code += "if (" + $$.name + ") goto " + $3.name + ";\n";
+        $$.code += $4.code;
+        $$.code += "goto " + $5.name + "_END;\n";
+        $$.code += $3.name + ":;\n";
+        $$.code += $5.code;
+        $$.name = $5.name;}
      | TK_DEFAULT ':' PROG
-       {$$.name = newLabel();
-        $$.code = $$.name + "_DEFAULT:";}
+       {tempSwitchVar = newTempVar(dogeToC("woof"));
+        $$.name = newLabel();
+        $$.code = $3.code;
+        $$.code += $$.name + "_END:;\n";}
      |
-       {$$.name = newLabel();
-        $$.code = $$.name + "_DEFAULT:";}
+       {$$.code = "";}
      ;
 
 ELSE: TK_ELSE '{' PROG '}'
@@ -379,6 +444,7 @@ int lineNumber = 1;
 int yyparse();
 
 vector<map<string, Type>> symbolTable;
+map<string, Func> functionTable;
 
 void newScope() {
   map<string, Type> newTable;
@@ -480,6 +546,20 @@ string declareVariable(string name, string type, int dimension, int size1, int s
   }
 
   return (name);
+}
+
+void declareFunction(string name, string type, vector<string> params) {
+  Func temp(name, type, params.size(), params);
+
+  insertFunctionTable(name, temp);
+}
+
+void insertFunctionTable(string name, Func type) {
+  if (functionTable.find(name) != functionTable.end()) {
+    error("Function " + name + " has already been declared.");
+  }
+
+  functionTable[name] = type;
 }
 
 Type getVarType(string name) {

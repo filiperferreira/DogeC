@@ -24,6 +24,7 @@ STRING  "\""([^\n'])*"\""
 
 "say"       {yylval = Attributes(yytext); return TK_OUT;}
 "hear"      {yylval = Attributes(yytext); return TK_IN;}
+"amaze"		{yylval = Attributes(yytext); return TK_RETURN;}
 
 "wow"       {yylval = Attributes(yytext); return TK_IF;}
 "scare"     {yylval = Attributes(yytext); return TK_ELSE;}
@@ -32,7 +33,7 @@ STRING  "\""([^\n'])*"\""
 "make"      {yylval = Attributes(yytext); return TK_DO;}
 "switchy"   {yylval = Attributes(yytext); return TK_SWITCH;}
 "choose"	{yylval = Attributes(yytext); return TK_CASE;}
-"default"   {yylval = Attributes(yytext); return TK_DEFAULT;}
+"sad"       {yylval = Attributes(yytext); return TK_DEFAULT;}
 
 "very"      {yylval = Attributes(yytext); return TK_ATTRIB;}
 "much"      {yylval = Attributes(yytext); return TK_SUM;}
