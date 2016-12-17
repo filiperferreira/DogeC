@@ -22,13 +22,17 @@ STRING  "\""([^\n'])*"\""
 "real"      {yylval = Attributes("true"); return TK_BOOLVAL;}
 "lies"      {yylval = Attributes("false"); return TK_BOOLVAL;}
 
-"say"       {yylval = Attributes("false"); return TK_OUT;}
-"hear"      {yylval = Attributes("false"); return TK_IN;}
+"say"       {yylval = Attributes(yytext); return TK_OUT;}
+"hear"      {yylval = Attributes(yytext); return TK_IN;}
 
 "wow"       {yylval = Attributes(yytext); return TK_IF;}
 "scare"     {yylval = Attributes(yytext); return TK_ELSE;}
 "loopy"     {yylval = Attributes(yytext); return TK_FOR;}
 "chase"     {yylval = Attributes(yytext); return TK_WHILE;}
+"make"      {yylval = Attributes(yytext); return TK_DO;}
+"switchy"   {yylval = Attributes(yytext); return TK_SWITCH;}
+"choose"	{yylval = Attributes(yytext); return TK_CASE;}
+"default"   {yylval = Attributes(yytext); return TK_DEFAULT;}
 
 "very"      {yylval = Attributes(yytext); return TK_ATTRIB;}
 "much"      {yylval = Attributes(yytext); return TK_SUM;}
